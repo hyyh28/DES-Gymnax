@@ -41,7 +41,7 @@ start_time = time.time()
 
 
 # Run the simulation 10,000 times
-env.run(till=1000000)
+env.run(till=1000)
 # Record the end time
 end_time = time.time()
 
