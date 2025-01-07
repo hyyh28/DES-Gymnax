@@ -22,4 +22,12 @@ def get_average_waiting_time(obs, workers):
     average_waiting_time = {worker:average_waiting_time_dict[worker]["time"][-1] / average_waiting_time_dict[worker]["num"][-1] for worker in range(workers)}
     return average_waiting_time_dict, average_waiting_time
 
+def get_customers_changing_MC(obs, workers):
+    customers_changing_dict = {worker: {"time": [], "num": []} for worker in range(workers)}
+    for key in customers_changing_dict:
+        customers_changing_list = obs[key][:,0:-1].tolist()
+        customers_changing_time_list = obs[key][:, 2].tolist()
+        customers_changing_dict[key]["time"] = customers_changing_time_list
+        customers_changing_dict[key]["num"] = customers_changing_list
+    return customers_changing_dict
 

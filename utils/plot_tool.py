@@ -2,6 +2,7 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import matplotlib
 import imageio
+import numpy as np
 import os
 
 matplotlib.use('TkAgg')
@@ -154,6 +155,91 @@ def generate_gifs_for_rollouts(results, params, output_dir="output_gifs"):
             # Save frame
             frame_path = os.path.join(frames_dir, f"frame_{t_idx:03d}.png")
             plt.savefig(frame_path)
+            gif_frames.append(frame_path)
+
+        plt.close(fig)
+
+        # Create GIF
+        with imageio.get_writer(gif_filename, mode='I', duration=0.5) as writer:
+            for frame_path in gif_frames:
+                image = imageio.imread(frame_path)
+                writer.append_data(image)
+
+        # Cleanup
+        for frame_path in gif_frames:
+            os.remove(frame_path)
+        os.rmdir(frames_dir)
+
+        print(f"GIF for worker {key} saved as {gif_filename}")
+
+
+def generate_gifs_for_rollouts_MC(results, params, output_dir="output_gifs"):
+    os.makedirs(output_dir, exist_ok=True)
+
+    for key, result in results.items():
+        gif_filename = os.path.join(output_dir, f"queue_length_worker_{key}.gif")
+        gif_frames = []
+        frames_dir = os.path.join(output_dir, f"frames_worker_{key}")
+        os.makedirs(frames_dir, exist_ok=True)
+
+        fig, ax = plt.subplots(figsize=(16, 9))
+
+        for t_idx in range(len(result['time'])):
+            x = result['time'][:t_idx + 1]
+            y = np.array(result['num'][:t_idx + 1])  # y is a 2D array: shape (t_idx+1, num_queues)
+
+            initialized_time = params.initilized_time
+            real_time = [datetime.fromtimestamp(initialized_time + t) for t in x]
+            real_time_str = [rt.strftime("%H:%M:%S") for rt in real_time]
+
+            ax.clear()
+            colors = plt.cm.tab20(np.linspace(0, 1, y.shape[1]))
+
+            event_description = []  # List to store event descriptions for the title
+
+            # Plot line chart for each queue, with y as the number of customers in each queue
+            for queue_idx in range(y.shape[1]):
+                ax.plot(real_time_str, y[:, queue_idx],
+                        color=colors[queue_idx],
+                        label=f"Queue {queue_idx}", lw=2)
+                if t_idx > 0:
+                    prev_customers = y[t_idx - 1, queue_idx]
+                    curr_customers = y[t_idx, queue_idx]
+
+                    if curr_customers > prev_customers:
+                        event_description.append(f"Queue {queue_idx} got a new customer.")
+                    elif curr_customers < prev_customers:
+                        event_description.append(f"Queue {queue_idx} served a customer.")
+
+            # Set title to include event descriptions
+            if event_description:
+                event_text = " | ".join(event_description)
+                ax.set_title(f"Rollout for Worker: {key} at time: {real_time_str[-1]} | Events: {event_text}",
+                             fontsize=18, weight='bold', pad=20)
+            else:
+                ax.set_title(f"Rollout for Worker: {key} at time: {real_time_str[-1]}", fontsize=18, weight='bold', pad=20)
+
+            # Labeling and formatting
+            ax.set_yticks(range(0, int(np.max(y)) + 1, 1))  # Ensure integer ticks on y-axis
+            ax.set_ylabel('Number of Customers in Queue', fontsize=14, weight='bold')
+            ax.set_xlabel('Time', fontsize=14, weight='bold')
+
+            # Set x-ticks for time labels (every 10th time point or fewer if needed)
+            ax.set_xticks(real_time_str[::max(1, len(real_time_str) // 10)])
+            ax.set_xticklabels(real_time_str[::max(1, len(real_time_str) // 10)], fontsize=14, weight='bold', rotation=45)
+
+            # Dynamic legend handling
+            handles, labels = ax.get_legend_handles_labels()
+            unique_labels = dict(zip(labels, handles))  # Remove duplicate labels
+            ax.legend(unique_labels.values(), unique_labels.keys(), loc="upper left", fontsize=16, frameon=True, facecolor='white', edgecolor='black')
+
+            ax.grid(linestyle='--', alpha=0.6)
+            ax.set_axisbelow(True)
+            plt.tight_layout()
+
+            # Save frame
+            frame_path = os.path.join(frames_dir, f"frame_{t_idx:03d}.png")
+            plt.savefig(frame_path, dpi=120, bbox_inches='tight')
             gif_frames.append(frame_path)
 
         plt.close(fig)
