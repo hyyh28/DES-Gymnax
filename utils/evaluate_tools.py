@@ -52,9 +52,9 @@ def mmc_performance(lambda_, mu, c):
 
 # Example Usage
 if __name__ == "__main__":
-    lambda_ = 0.025  # Arrival rate
-    mu = 0.04  # Service rate
-    c = 1  # Number of servers
+    lambda_ = 0.0667  # Arrival rate
+    mu = 0.05  # Service rate
+    c = 3  # Number of servers
 
     results = mmc_performance(lambda_, mu, c)
     print("M/M/c Queue Performance Metrics:")

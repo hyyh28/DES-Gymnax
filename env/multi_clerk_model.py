@@ -12,29 +12,32 @@ from jax import lax
 from gymnax.environments import environment, spaces
 import time
 import os
-import matplotlib.pyplot as plt
-import matplotlib
-import imageio
-import numpy as np
-matplotlib.use('TkAgg')
-plt.rcParams["font.family"] = "Times New Roman"
+# import matplotlib.pyplot as plt
+# import matplotlib
+# import imageio
+# import numpy as np
+# matplotlib.use('TkAgg')
+# plt.rcParams["font.family"] = "Times New Roman"
 
 
 @struct.dataclass
 class EnvState(environment.EnvState):
-    queue_length: chex.Array
+    customers_in_the_queue: chex.Array
     last_customer_enter_time: float
     last_clerk_processing_time: chex.Array
     customers_arriving_time: float
+    clerk_processing_time: chex.Array
     time: int
     clock_time: int
+    served_customers: float
+    total_waiting_time: float
 
 
 @struct.dataclass
 class EnvParames(environment.EnvParams):
-    max_time_step: int = 100
-    clerk_processing_time: float = 30
-    max_time: float = 100
+    max_time_step: int = 200
+    clerk_processing_time: float = 20
+    max_time: float = 200
     initilized_time: float = datetime(2024, 1, 1, 8, 0, 0).timestamp()
     clerk_num: int = 2
 
@@ -63,76 +66,100 @@ class QueueNetwork(environment.Environment[EnvState, EnvParames]):
         return EnvParames()
 
     def get_handle_customer_clerk_id(self, key, state:EnvState):
-        return jnp.argmin(state.queue_length)
+        return jnp.argmin(state.customers_in_the_queue)
 
     def update_while_customer_arrive(self, key, state:EnvState, params: EnvParames):
+        is_customers_in_the_queues = jnp.heaviside(state.customers_in_the_queue, 0)
+        new_clock_time = state.last_customer_enter_time + state.customers_arriving_time
+        last_clerk_processing_time = (
+                is_customers_in_the_queues * state.last_clerk_processing_time +
+                (jnp.ones(self.clerk_num) - is_customers_in_the_queues) * new_clock_time
+        )
+        total_waiting_time = state.total_waiting_time + jnp.sum(state.customers_in_the_queue) * (new_clock_time - state.clock_time)
         handle_customer_clerk_id = self.get_handle_customer_clerk_id(key,state)
-        customer_in_the_queue = state.queue_length
-        customer_in_the_queue = customer_in_the_queue.at[handle_customer_clerk_id].set(customer_in_the_queue[handle_customer_clerk_id] + 1)
-        clock_time = state.last_customer_enter_time + state.customers_arriving_time
-        customers_arriving_time = jax.random.poisson(key, lam=50)
+        customers_in_the_queue = state.customers_in_the_queue
+        customers_in_the_queue = customers_in_the_queue.at[handle_customer_clerk_id].set(customers_in_the_queue[handle_customer_clerk_id] + 1)
+        clock_time = new_clock_time
+        customers_arriving_time = jax.random.poisson(key, lam=20)
+        clerk_processing_time = state.clerk_processing_time
         last_customer_enter_time = clock_time
-        last_clerk_processing_time = state.last_clerk_processing_time
-        return customer_in_the_queue, clock_time, customers_arriving_time, last_customer_enter_time, last_clerk_processing_time
+        served_customers = state.served_customers
+        return customers_in_the_queue, clock_time, customers_arriving_time, clerk_processing_time, last_customer_enter_time, last_clerk_processing_time, served_customers, total_waiting_time
 
     def update_while_clerk_process(self, key, state: EnvState, params: EnvParames, clerk_index: chex.Array):
-        customer_in_the_queue = state.queue_length
+        num_customers = jnp.sum(state.customers_in_the_queue)
+        customers_in_the_queue = state.customers_in_the_queue
         clock_time = state.clock_time
         customers_arriving_time = state.customers_arriving_time
         last_customer_enter_time = state.last_customer_enter_time
         last_clerk_processing_time = state.last_clerk_processing_time
-        for clerk in clerk_index:
-            customer_in_the_queue = customer_in_the_queue.at[clerk].set(jnp.maximum(customer_in_the_queue[clerk] - 1, 0))
-            clock_time = state.last_clerk_processing_time[clerk] + params.clerk_processing_time
-            last_clerk_processing_time = last_clerk_processing_time.at[clerk].set(clock_time)
-        return customer_in_the_queue, clock_time, customers_arriving_time, last_customer_enter_time, last_clerk_processing_time
+        clerk_processing_time = state.clerk_processing_time
 
-    def handle_equal_time(self, key, state: EnvState, params: EnvParames, clerk_index: chex.Array):
-        customer_in_the_queue = state.queue_length
-        last_clerk_processing_time = state.last_clerk_processing_time
-        handle_customer_clerk_id = self.get_handle_customer_clerk_id(key,state)
-        customer_in_the_queue = customer_in_the_queue.at[handle_customer_clerk_id].set(customer_in_the_queue[handle_customer_clerk_id] + 1)
-        clock_time = state.last_customer_enter_time + state.customers_arriving_time
-        customers_arriving_time = jax.random.poisson(key, lam=50)
-        last_customer_enter_time = clock_time
         for clerk in clerk_index:
-            customer_in_the_queue = customer_in_the_queue.at[clerk].set(jnp.maximum(customer_in_the_queue[clerk] - 1, 0))
+            customers_in_the_queue = customers_in_the_queue.at[clerk].set(jnp.maximum(customers_in_the_queue[clerk] - 1, 0))
+            clock_time = state.last_clerk_processing_time[clerk] + state.clerk_processing_time[clerk]
             last_clerk_processing_time = last_clerk_processing_time.at[clerk].set(clock_time)
-        return customer_in_the_queue, clock_time, customers_arriving_time, last_customer_enter_time, last_clerk_processing_time
+            clerk_processing_time = clerk_processing_time.at[clerk].set(jnp.rint(jax.random.exponential(key) * params.clerk_processing_time))
+        is_customers_in_the_queues = jnp.heaviside(state.customers_in_the_queue, 0)
+        # last_clerk_processing_time = (
+        #         is_customers_in_the_queues * state.last_clerk_processing_time +
+        #         (jnp.ones(self.clerk_num) - is_customers_in_the_queues) * clock_time
+        # )
+        served_customers = state.served_customers + num_customers - jnp.sum(customers_in_the_queue)
+        total_waiting_time = state.total_waiting_time + num_customers * (clock_time - state.clock_time)
+        return customers_in_the_queue, clock_time, customers_arriving_time, clerk_processing_time, last_customer_enter_time, last_clerk_processing_time, served_customers, total_waiting_time
+
+    # def handle_equal_time(self, key, state: EnvState, params: EnvParames, clerk_index: chex.Array):
+    #     customers_in_the_queue = state.customers_in_the_queue
+    #     last_clerk_processing_time = state.last_clerk_processing_time
+    #     handle_customer_clerk_id = self.get_handle_customer_clerk_id(key,state)
+    #     customers_in_the_queue = customers_in_the_queue.at[handle_customer_clerk_id].set(customers_in_the_queue[handle_customer_clerk_id] + 1)
+    #     clock_time = state.last_customer_enter_time + state.customers_arriving_time
+    #     customers_arriving_time = jax.random.poisson(key, lam=12.5)
+    #     last_customer_enter_time = clock_time
+    #     for clerk in clerk_index:
+    #         customers_in_the_queue = customers_in_the_queue.at[clerk].set(jnp.maximum(customers_in_the_queue[clerk] - 1, 0))
+    #         last_clerk_processing_time = last_clerk_processing_time.at[clerk].set(clock_time)
+    #     return customers_in_the_queue, clock_time, customers_arriving_time, last_customer_enter_time, last_clerk_processing_time
 
 
     def step_env(self, key: chex.PRNGKey, state: EnvState, action: Union[int, float, chex.Array], params: EnvParames) -> \
     Tuple[chex.Array, EnvState, jnp.ndarray, jnp.ndarray, Dict[Any, Any]]:
         expected_next_arriving_time = state.last_customer_enter_time + state.customers_arriving_time
-        min_clerk_processing_time = jnp.min(state.last_clerk_processing_time)
-        expected_next_processing_time = min_clerk_processing_time + params.clerk_processing_time
-        expected_processed_clerk_index = jnp.where(state.last_clerk_processing_time == min_clerk_processing_time, size=self.clerk_num)[0]
+        is_customers_in_the_queue = jnp.heaviside(state.customers_in_the_queue, 0)
+        valid_clerk_processing_times = jnp.where(
+            is_customers_in_the_queue > 0, state.last_clerk_processing_time, jnp.inf
+        )
+        expected_next_processing_time = valid_clerk_processing_times + state.clerk_processing_time
+        min_expected_clerk_processing_time = jnp.min(expected_next_processing_time)
+        expected_processed_clerk_index = jnp.where(
+            expected_next_processing_time == min_expected_clerk_processing_time, size=1
+        )[0]
+        # jax.debug.print("{x}, {y}", x=expected_processed_clerk_index, y=min_expected_clerk_processing_time)
         def resolve_event_case():
             return lax.cond(
-                expected_next_arriving_time < expected_next_processing_time,
+                expected_next_arriving_time < min_expected_clerk_processing_time,
                 lambda _: self.update_while_customer_arrive(key, state, params),
-                lambda _: lax.cond(
-                    expected_next_arriving_time > expected_next_processing_time,
-                    lambda _: self.update_while_clerk_process(key, state, params, expected_processed_clerk_index),
-                    lambda _: self.handle_equal_time(key, state, params, expected_processed_clerk_index),
-                    operand=None
-                ),
+                lambda _: self.update_while_clerk_process(key, state, params, expected_processed_clerk_index),
                 operand=None
             )
 
-        customers_in_the_queue, clock_time, customers_arriving_time, last_customer_enter_time, last_clerk_processing_time = resolve_event_case()
+        customers_in_the_queue, clock_time, customers_arriving_time, clerk_processing_time, last_customer_enter_time, last_clerk_processing_time, served_customers, total_waiting_time = resolve_event_case()
         reward = 0.0
         time_step = state.time + 1
         state = EnvState(
-            queue_length=customers_in_the_queue,
+            customers_in_the_queue=customers_in_the_queue,
             customers_arriving_time=customers_arriving_time,
+            clerk_processing_time=clerk_processing_time,
             last_customer_enter_time=last_customer_enter_time,
             last_clerk_processing_time=last_clerk_processing_time,
             time=time_step,
-            clock_time=clock_time
+            clock_time=clock_time,
+            served_customers=served_customers,
+            total_waiting_time=total_waiting_time
         )
-        # jax.debug.print("{}", state)
         done = self.is_terminal(state, params)
+        # jax.debug.print("{}", state)
         return (
             lax.stop_gradient(self.get_obs(state)),
             lax.stop_gradient(state),
@@ -147,14 +174,25 @@ class QueueNetwork(environment.Environment[EnvState, EnvParames]):
         clock_time = 0.0
         last_customer_enter_time = 0.0
         last_clerk_processing_time = jnp.zeros(self.clerk_num)
-        customers_arriving_time = jax.random.poisson(key, lam=50)
+        customers_arriving_time = jax.random.poisson(key, lam=20)
+        key, subkey = jax.random.split(key)
+        key, subkey = jax.random.split(key)
+        clerk_processing_time = jnp.rint(
+            jax.random.exponential(subkey, shape=(self.clerk_num,)) * params.clerk_processing_time
+        )
+
+        served_customers = 0.0
+        total_waiting_time = 0.0
         state = EnvState(
-            queue_length=customers_in_the_queue,
+            customers_in_the_queue=customers_in_the_queue,
             customers_arriving_time=customers_arriving_time,
+            clerk_processing_time=clerk_processing_time,
             last_customer_enter_time=last_customer_enter_time,
             last_clerk_processing_time=last_clerk_processing_time,
             time=time_step,
-            clock_time=clock_time
+            clock_time=clock_time,
+            served_customers=served_customers,
+            total_waiting_time=total_waiting_time
         )
         return self.get_obs(state), state
 
@@ -170,4 +208,4 @@ class QueueNetwork(environment.Environment[EnvState, EnvParames]):
         return jnp.array(done)
 
     def get_obs(self, state: EnvState, params=None, key=None):
-        return jnp.hstack((state.queue_length, state.clock_time))
+        return jnp.hstack((state.customers_in_the_queue, state.clock_time, state.served_customers, state.total_waiting_time))

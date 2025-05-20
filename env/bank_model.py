@@ -29,9 +29,9 @@ class EnvState(environment.EnvState):
 
 @struct.dataclass
 class EnvParames(environment.EnvParams):
-    max_time_step: int = 1000
-    clerk_processing_time: float = 40
-    max_time: float = 1000
+    max_time_step: int = 500000
+    clerk_processing_time: float = 38
+    max_time: float = 500000
     initilized_time: float = datetime(2024, 1, 1, 8, 0, 0).timestamp()
 
 

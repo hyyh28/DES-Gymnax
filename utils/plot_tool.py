@@ -28,17 +28,17 @@ def draw_poltlib(results, plot_dir="MM_Model.pdf"):
         axs[idx].set_ylabel('Customers in the queue', fontsize=10, weight='bold')
         axs[idx].legend(loc="upper left")
 
-        # Add y = 1/30 * x line
-        y1 = [i / 30 for i in x]
-        axs[idx].plot(x, y1, linestyle='--', color='blue', label='y = 1/30 * x')
-
-        # Add y = 1/15 * x line
-        y2 = [i / 15 for i in x]
-        axs[idx].plot(x, y2, linestyle='--', color='red', label='y = 1/15 * x')
-
-        # Annotate the lines
-        axs[idx].text(x[-1], y1[-1], 'y = 1/30 * x', fontsize=10, color='blue', ha='left', va='bottom')
-        axs[idx].text(x[-1], y2[-1], 'y = 1/15 * x', fontsize=10, color='red', ha='left', va='bottom')
+        # # Add y = 1/30 * x line
+        # y1 = [i / 30 for i in x]
+        # axs[idx].plot(x, y1, linestyle='--', color='blue', label='y = 1/30 * x')
+        #
+        # # Add y = 1/15 * x line
+        # y2 = [i / 15 for i in x]
+        # axs[idx].plot(x, y2, linestyle='--', color='red', label='y = 1/15 * x')
+        #
+        # # Annotate the lines
+        # axs[idx].text(x[-1], y1[-1], 'y = 1/30 * x', fontsize=10, color='blue', ha='left', va='bottom')
+        # axs[idx].text(x[-1], y2[-1], 'y = 1/15 * x', fontsize=10, color='red', ha='left', va='bottom')
 
     # Hide any unused subplots
     for idx in range(len(results), len(axs)):
@@ -173,16 +173,24 @@ def generate_gifs_for_rollouts(results, params, output_dir="output_gifs"):
         print(f"GIF for worker {key} saved as {gif_filename}")
 
 
+import os
+import shutil
+import numpy as np
+import matplotlib.pyplot as plt
+from datetime import datetime
+import imageio
+
 def generate_gifs_for_rollouts_MC(results, params, output_dir="output_gifs"):
     os.makedirs(output_dir, exist_ok=True)
 
     for key, result in results.items():
         gif_filename = os.path.join(output_dir, f"queue_length_worker_{key}.gif")
+        pdf_filename = os.path.join(output_dir, f"last_frame_worker_{key}.pdf")  # PDF output for the last frame
         gif_frames = []
         frames_dir = os.path.join(output_dir, f"frames_worker_{key}")
         os.makedirs(frames_dir, exist_ok=True)
 
-        fig, ax = plt.subplots(figsize=(16, 9))
+        fig, ax = plt.subplots(figsize=(14, 9))
 
         for t_idx in range(len(result['time'])):
             x = result['time'][:t_idx + 1]
@@ -193,14 +201,16 @@ def generate_gifs_for_rollouts_MC(results, params, output_dir="output_gifs"):
             real_time_str = [rt.strftime("%H:%M:%S") for rt in real_time]
 
             ax.clear()
-            colors = plt.cm.tab20(np.linspace(0, 1, y.shape[1]))
+
+            # Assign colors alternately for each queue
+            colors = ['#4169E1', '#DC143C']  # Royal blue and crimson red
 
             event_description = []  # List to store event descriptions for the title
 
             # Plot line chart for each queue, with y as the number of customers in each queue
             for queue_idx in range(y.shape[1]):
                 ax.plot(real_time_str, y[:, queue_idx],
-                        color=colors[queue_idx],
+                        color=colors[queue_idx % len(colors)],  # Alternate between blue and red
                         label=f"Queue {queue_idx}", lw=2)
                 if t_idx > 0:
                     prev_customers = y[t_idx - 1, queue_idx]
@@ -215,23 +225,24 @@ def generate_gifs_for_rollouts_MC(results, params, output_dir="output_gifs"):
             if event_description:
                 event_text = " | ".join(event_description)
                 ax.set_title(f"Rollout for Worker: {key} at time: {real_time_str[-1]} | Events: {event_text}",
-                             fontsize=18, weight='bold', pad=20)
+                             fontsize=20, weight='bold', pad=20)
             else:
-                ax.set_title(f"Rollout for Worker: {key} at time: {real_time_str[-1]}", fontsize=18, weight='bold', pad=20)
+                ax.set_title(f"Rollout for Worker: {key} at time: {real_time_str[-1]}", fontsize=20, weight='bold', pad=20)
 
             # Labeling and formatting
             ax.set_yticks(range(0, int(np.max(y)) + 1, 1))  # Ensure integer ticks on y-axis
-            ax.set_ylabel('Number of Customers in Queue', fontsize=14, weight='bold')
-            ax.set_xlabel('Time', fontsize=14, weight='bold')
+            ax.set_yticklabels(range(0, int(np.max(y)) + 1, 1), fontsize=20, weight='bold')
+            ax.set_ylabel('Number of Customers in Queue', fontsize=20, weight='bold')
+            ax.set_xlabel('Time', fontsize=20, weight='bold')
 
             # Set x-ticks for time labels (every 10th time point or fewer if needed)
             ax.set_xticks(real_time_str[::max(1, len(real_time_str) // 10)])
-            ax.set_xticklabels(real_time_str[::max(1, len(real_time_str) // 10)], fontsize=14, weight='bold', rotation=45)
+            ax.set_xticklabels(real_time_str[::max(1, len(real_time_str) // 10)], fontsize=20, weight='bold', rotation=45)
 
             # Dynamic legend handling
             handles, labels = ax.get_legend_handles_labels()
             unique_labels = dict(zip(labels, handles))  # Remove duplicate labels
-            ax.legend(unique_labels.values(), unique_labels.keys(), loc="upper left", fontsize=16, frameon=True, facecolor='white', edgecolor='black')
+            ax.legend(unique_labels.values(), unique_labels.keys(), loc="upper left", fontsize=20, frameon=True, facecolor='white', edgecolor='black')
 
             ax.grid(linestyle='--', alpha=0.6)
             ax.set_axisbelow(True)
@@ -241,6 +252,10 @@ def generate_gifs_for_rollouts_MC(results, params, output_dir="output_gifs"):
             frame_path = os.path.join(frames_dir, f"frame_{t_idx:03d}.png")
             plt.savefig(frame_path, dpi=120, bbox_inches='tight')
             gif_frames.append(frame_path)
+
+            # Save the last frame as PDF
+            if t_idx == len(result['time']) - 1:
+                plt.savefig(pdf_filename, format='pdf', dpi=300, bbox_inches='tight')
 
         plt.close(fig)
 
@@ -252,7 +267,8 @@ def generate_gifs_for_rollouts_MC(results, params, output_dir="output_gifs"):
 
         # Cleanup
         for frame_path in gif_frames:
-            os.remove(frame_path)
-        os.rmdir(frames_dir)
+            os.remove(frame_path)  # Remove individual frames
+        shutil.rmtree(frames_dir)  # Remove the frames directory and its contents
 
         print(f"GIF for worker {key} saved as {gif_filename}")
+        print(f"Last frame for worker {key} saved as {pdf_filename}")
