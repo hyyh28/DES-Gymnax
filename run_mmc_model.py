@@ -6,7 +6,6 @@ import jax
 import argparse
 
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='M/M/C Model Simulation Parameters')
     parser.add_argument('--max_time_step', type=int, default=500000,

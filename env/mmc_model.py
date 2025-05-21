@@ -1,23 +1,12 @@
-import functools
 from typing import Any, Dict, Optional, Tuple, Union
 from datetime import datetime
 import chex
 from flax import struct
 import jax
 import jax.numpy as jnp
-import timeit
-from memory_profiler import profile
 from gymnax.environments.environment import TEnvParams
 from jax import lax
 from gymnax.environments import environment, spaces
-import time
-import os
-# import matplotlib.pyplot as plt
-# import matplotlib
-# import imageio
-# import numpy as np
-# matplotlib.use('TkAgg')
-# plt.rcParams["font.family"] = "Times New Roman"
 
 
 @struct.dataclass
@@ -37,9 +26,9 @@ class EnvState(environment.EnvState):
 class EnvParames(environment.EnvParams):
     max_time_step: int = 200
     clerk_processing_time: float = 20
-    max_time: float = 200
-    initilized_time: float = datetime(2024, 1, 1, 8, 0, 0).timestamp()
+    customers_arriving_time: float = 20
     clerk_num: int = 2
+    initilized_time: float = datetime(2024, 1, 1, 8, 0, 0).timestamp()
 
 
 class QueueNetwork(environment.Environment[EnvState, EnvParames]):
@@ -61,6 +50,7 @@ class QueueNetwork(environment.Environment[EnvState, EnvParames]):
         super().__init__()
         self.clerk_num = params.clerk_num
         self.obs_shape = (self.clerk_num, 2)
+        self.params = params or EnvParames
 
     def default_params(self) -> EnvParames:
         return EnvParames()
@@ -80,7 +70,7 @@ class QueueNetwork(environment.Environment[EnvState, EnvParames]):
         customers_in_the_queue = state.customers_in_the_queue
         customers_in_the_queue = customers_in_the_queue.at[handle_customer_clerk_id].set(customers_in_the_queue[handle_customer_clerk_id] + 1)
         clock_time = new_clock_time
-        customers_arriving_time = jax.random.poisson(key, lam=20)
+        customers_arriving_time = jax.random.poisson(key, lam=params.customers_arriving_time)
         clerk_processing_time = state.clerk_processing_time
         last_customer_enter_time = clock_time
         served_customers = state.served_customers
@@ -139,8 +129,8 @@ class QueueNetwork(environment.Environment[EnvState, EnvParames]):
         def resolve_event_case():
             return lax.cond(
                 expected_next_arriving_time < min_expected_clerk_processing_time,
-                lambda _: self.update_while_customer_arrive(key, state, params),
-                lambda _: self.update_while_clerk_process(key, state, params, expected_processed_clerk_index),
+                lambda _: self.update_while_customer_arrive(key, state, self.params),
+                lambda _: self.update_while_clerk_process(key, state, self.params, expected_processed_clerk_index),
                 operand=None
             )
 
@@ -158,7 +148,7 @@ class QueueNetwork(environment.Environment[EnvState, EnvParames]):
             served_customers=served_customers,
             total_waiting_time=total_waiting_time
         )
-        done = self.is_terminal(state, params)
+        done = self.is_terminal(state, self.params)
         # jax.debug.print("{}", state)
         return (
             lax.stop_gradient(self.get_obs(state)),
@@ -174,11 +164,11 @@ class QueueNetwork(environment.Environment[EnvState, EnvParames]):
         clock_time = 0.0
         last_customer_enter_time = 0.0
         last_clerk_processing_time = jnp.zeros(self.clerk_num)
-        customers_arriving_time = jax.random.poisson(key, lam=20)
+        customers_arriving_time = jax.random.poisson(key, lam=self.params.customers_arriving_time)
         key, subkey = jax.random.split(key)
         key, subkey = jax.random.split(key)
         clerk_processing_time = jnp.rint(
-            jax.random.exponential(subkey, shape=(self.clerk_num,)) * params.clerk_processing_time
+            jax.random.exponential(subkey, shape=(self.clerk_num,)) * self.params.clerk_processing_time
         )
 
         served_customers = 0.0
@@ -197,7 +187,7 @@ class QueueNetwork(environment.Environment[EnvState, EnvParames]):
         return self.get_obs(state), state
 
     def is_terminal(self, state: EnvState, params: EnvParames) -> jnp.ndarray:
-        done = state.time > params.max_time_step
+        done = state.time > self.params.max_time_step
         used_done = jnp.asarray(done, dtype=jnp.bool_)
         jax.lax.cond(
             done,  # condition

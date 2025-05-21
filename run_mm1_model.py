@@ -37,6 +37,6 @@ if __name__ == "__main__":
     customers_changing_dict = get_customers_changing(obs, works)
     average_waiting_time_dict, average_waiting_time = get_average_waiting_time(obs, works)
     # generate_gifs_for_rollouts(customers_changing_dict, env_params)
-    draw_poltlib(customers_changing_dict)
+    draw_poltlib(customers_changing_dict, plot_dir="MM1_Model.pdf")
     print(average_waiting_time)
     print(customers_changing_dict[0]["average_queue_length"])

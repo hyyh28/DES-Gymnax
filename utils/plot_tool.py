@@ -8,7 +8,7 @@ import os
 matplotlib.use('TkAgg')
 plt.rcParams["font.family"] = "Times New Roman"
 
-def draw_poltlib(results, plot_dir="MM_Model.pdf"):
+def draw_poltlib(results, plot_dir="MM1_Model.pdf"):
     num_workers = len(results)
     cols = 2  # Number of columns per row
     rows = (num_workers + cols - 1) // cols  # Calculate the number of rows needed

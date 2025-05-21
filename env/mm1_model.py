@@ -31,7 +31,7 @@ class EnvState(environment.EnvState):
 class EnvParames(environment.EnvParams):
     max_time_step: int = 500000
     clerk_processing_time: float = 38
-    max_time: float = 500000
+    customers_arriving_time: float = 40
     initilized_time: float = datetime(2024, 1, 1, 8, 0, 0).timestamp()
 
 
@@ -44,9 +44,10 @@ class BankSimulation(environment.Environment[EnvState, EnvParames]):
     def state_space(self, params: EnvParames):
         pass
 
-    def __init__(self):
+    def __init__(self, params: EnvParames):
         super().__init__()
         self.obs_shape = (4,)
+        self.params = params or EnvParames
 
     def default_params(self) -> EnvParames:
         return EnvParames()
@@ -58,7 +59,7 @@ class BankSimulation(environment.Environment[EnvState, EnvParames]):
         total_waiting_time = state.total_waiting_time + state.customers_in_the_queue * (new_clock_time - state.clock_time)
         customer_in_the_queue = state.customers_in_the_queue + 1
         clock_time = new_clock_time
-        customers_arriving_time = jax.random.poisson(key, lam=40)
+        customers_arriving_time = jax.random.poisson(key, lam=params.customers_arriving_time)
         clerk_processing_time = state.clerk_processing_time
         last_customer_enter_time = clock_time
         served_customers = state.served_customers
@@ -85,7 +86,7 @@ class BankSimulation(environment.Environment[EnvState, EnvParames]):
         total_waiting_time = state.total_waiting_time + state.customers_in_the_queue * (new_clock_time - state.clock_time)
         clock_time = new_clock_time
         served_customers = state.served_customers + 1
-        customers_arriving_time = jax.random.poisson(key, lam=40)
+        customers_arriving_time = jax.random.poisson(key, lam=params.customers_arriving_time)
         clerk_processing_time = jnp.rint(jax.random.exponential(key) * params.clerk_processing_time)
         last_customer_enter_time = clock_time
         last_clerk_processing_time = clock_time
@@ -105,11 +106,11 @@ class BankSimulation(environment.Environment[EnvState, EnvParames]):
         def resolve_event_case():
             return lax.cond(
                 expected_next_arriving_time < expected_next_processing_time,
-                lambda _: self.updatWhileCustomerArrive(key, state, params),
+                lambda _: self.updatWhileCustomerArrive(key, state, self.params),
                 lambda _: lax.cond(
                     expected_next_arriving_time > expected_next_processing_time,
-                    lambda _: self.updateWhileClerkProcess(key, state, params),
-                    lambda _: self.handleEqualTime(key, state, params),
+                    lambda _: self.updateWhileClerkProcess(key, state, self.params),
+                    lambda _: self.handleEqualTime(key, state, self.params),
                     operand=None
                 ),
                 operand=None
@@ -130,7 +131,7 @@ class BankSimulation(environment.Environment[EnvState, EnvParames]):
             served_customers=served_customers,
             total_waiting_time=total_waiting_time
         )
-        done = self.is_terminal(state, params)
+        done = self.is_terminal(state, self.params)
         return (
             lax.stop_gradient(self.get_obs(state)),
             lax.stop_gradient(state),
@@ -155,7 +156,7 @@ class BankSimulation(environment.Environment[EnvState, EnvParames]):
         last_customer_enter_time = clock_time
         last_clerk_processing_time = clock_time
         customers_arriving_time = jax.random.poisson(key, lam=40)
-        clerk_processing_time = jnp.rint(jax.random.exponential(key) * params.clerk_processing_time)
+        clerk_processing_time = jnp.rint(jax.random.exponential(key) * self.params.clerk_processing_time)
         served_customers = 0.0
         total_waiting_time = 0.0
         state = EnvState(

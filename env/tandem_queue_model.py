@@ -6,8 +6,6 @@ import chex
 from flax import struct
 import jax
 import jax.numpy as jnp
-import timeit
-from memory_profiler import profile
 from gymnax.environments.environment import TEnvParams
 from jax import lax
 from gymnax.environments import environment, spaces
@@ -29,7 +27,7 @@ class EnvParames(environment.EnvParams):
     clerk_processing_time: float = 30
     max_time: float = 140000
     initilized_time: float = datetime(2024, 1, 1, 8, 0, 0).timestamp()
-    clerk_num: int = 500
+    clerk_num: int = 2
 
 
 class QueueNetwork(environment.Environment[EnvState, EnvParames]):
